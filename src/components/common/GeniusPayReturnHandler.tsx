@@ -100,7 +100,7 @@ export const GeniusPayReturnHandler: React.FC = () => {
         }
 
         // Execute the send (records transaction, updates wallet)
-        await executeSendMoney();
+        await executeSendMoney(pending);
         setCurrentScreen('send_success');
       }
     };

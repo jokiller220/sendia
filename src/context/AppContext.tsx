@@ -84,7 +84,7 @@ interface AppContextType {
   rechargeWallet: (amountEUR: number) => Promise<void>;
   updateWalletBalance: (newEur: number) => Promise<void>;
   addBeneficiary: (beneficiary: Omit<Beneficiary, 'id'>) => void;
-  executeSendMoney: () => Promise<void>;
+  executeSendMoney: (draftOverride?: any) => Promise<void>;
   executeWithdrawal: () => Promise<void>;
   submitKyc: () => void;
   resetAppState: () => void;
@@ -521,10 +521,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const executeSendMoney = async () => {
+  const executeSendMoney = async (draftOverride?: any) => {
+    const activeDraft = draftOverride || sendDraft;
     let geniusRef = `GPAY-LIVE-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    if (!sendDraft.useWalletBalance) {
+    if (!activeDraft.useWalletBalance) {
       // Payment was already done via GeniusPay checkout before reaching here.
       // The reference is stored in the pending send draft from localStorage.
       const pendingStr = localStorage.getItem('sendia_completed_ref');
@@ -536,17 +537,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newTx: Transaction = {
       id: `SDN-${Math.floor(100000000 + Math.random() * 900000000)}`,
       type: 'SEND',
-      title: `Envoyé à ${sendDraft.recipientName}`,
-      senderOrRecipientName: sendDraft.recipientName,
-      senderOrRecipientPhone: sendDraft.recipientPhone,
-      amountEUR: sendDraft.amountEUR,
-      amountXOF: sendDraft.amountXOF,
-      feeEUR: sendDraft.feeEUR,
-      feeXOF: Math.round(sendDraft.feeEUR * exchangeRate),
+      title: `Envoyé à ${activeDraft.recipientName}`,
+      senderOrRecipientName: activeDraft.recipientName,
+      senderOrRecipientPhone: activeDraft.recipientPhone,
+      amountEUR: activeDraft.amountEUR,
+      amountXOF: activeDraft.amountXOF,
+      feeEUR: activeDraft.feeEUR,
+      feeXOF: Math.round(activeDraft.feeEUR * exchangeRate),
       exchangeRate,
       status: 'COMPLETED',
       geniusPayRef: geniusRef,
-      paymentMethod: sendDraft.paymentMethodTitle,
+      paymentMethod: activeDraft.paymentMethodTitle,
       createdAt: new Date().toISOString(),
       formattedDate: 'À l\'instant',
     };
@@ -554,8 +555,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransactions(prev => [newTx, ...prev]);
 
     // Update wallet balance if paid via wallet balance
-    if (sendDraft.useWalletBalance) {
-      const newBalance = Math.max(0, wallet.balanceEUR - sendDraft.amountEUR - sendDraft.feeEUR);
+    if (activeDraft.useWalletBalance) {
+      const newBalance = Math.max(0, wallet.balanceEUR - activeDraft.amountEUR - activeDraft.feeEUR);
       await updateWalletBalance(newBalance);
     }
 
@@ -563,7 +564,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       {
         id: `notif-${Date.now()}`,
         title: 'Transfert effectué',
-        message: `${sendDraft.amountXOF.toLocaleString('fr-FR')} XOF envoyés à ${sendDraft.recipientName} via ${sendDraft.paymentMethodTitle}`,
+        message: `${activeDraft.amountXOF.toLocaleString('fr-FR')} XOF envoyés à ${activeDraft.recipientName} via ${activeDraft.paymentMethodTitle}`,
         date: 'À l\'instant',
         unread: true,
       },
@@ -592,7 +593,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     // Credit transaction fee to Admin Wallet in Supabase
-    if (sendDraft.feeEUR > 0) {
+    if (activeDraft.feeEUR > 0) {
       try {
         const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000000';
         const { data: adminWallet } = await supabase
@@ -602,8 +603,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .maybeSingle();
 
         if (adminWallet) {
-          const updatedEur = parseFloat(adminWallet.balance_eur) + sendDraft.feeEUR;
-          const updatedXof = parseInt(adminWallet.balance_xof, 10) + Math.round(sendDraft.feeEUR * exchangeRate);
+          const updatedEur = parseFloat(adminWallet.balance_eur) + activeDraft.feeEUR;
+          const updatedXof = parseInt(adminWallet.balance_xof, 10) + Math.round(activeDraft.feeEUR * exchangeRate);
 
           await supabase
             .from('wallets')
@@ -622,8 +623,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             title: `Commission - Transfert de ${user.name}`,
             sender_or_recipient_name: user.name,
             sender_or_recipient_phone: user.phone,
-            amount_eur: sendDraft.feeEUR,
-            amount_xof: Math.round(sendDraft.feeEUR * exchangeRate),
+            amount_eur: activeDraft.feeEUR,
+            amount_xof: Math.round(activeDraft.feeEUR * exchangeRate),
             fee_eur: 0,
             fee_xof: 0,
             exchange_rate: exchangeRate,
@@ -639,8 +640,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Credit recipient wallet in Supabase DB if recipient exists
-    if (sendDraft.recipientPhone) {
-      const cleanPhone = sendDraft.recipientPhone.trim().replace(/\s+/g, '');
+    if (activeDraft.recipientPhone) {
+      const cleanPhone = activeDraft.recipientPhone.trim().replace(/\s+/g, '');
       const digitsOnly = cleanPhone.replace(/\D/g, '');
       const lastDigits = digitsOnly.substring(Math.max(0, digitsOnly.length - 8));
 
@@ -660,8 +661,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (recipientWallets && recipientWallets.length > 0) {
           const recWallet = recipientWallets[0];
-          const updatedXof = (recWallet.balance_xof || 0) + sendDraft.amountXOF;
-          const updatedEur = (recWallet.balance_eur || 0) + sendDraft.amountEUR;
+          const updatedXof = (recWallet.balance_xof || 0) + activeDraft.amountXOF;
+          const updatedEur = (recWallet.balance_eur || 0) + activeDraft.amountEUR;
 
           await supabase.from('wallets').update({
             balance_xof: updatedXof,
@@ -677,8 +678,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             title: `Reçu de ${user.name}`,
             sender_or_recipient_name: user.name,
             sender_or_recipient_phone: user.phone,
-            amount_eur: sendDraft.amountEUR,
-            amount_xof: sendDraft.amountXOF,
+            amount_eur: activeDraft.amountEUR,
+            amount_xof: activeDraft.amountXOF,
             fee_eur: 0,
             fee_xof: 0,
             exchange_rate: exchangeRate,
