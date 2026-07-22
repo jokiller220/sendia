@@ -3,14 +3,22 @@ import { useApp } from '../../context/AppContext';
 import { Globe, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 
 export const WelcomeScreen: React.FC = () => {
-  const { setCurrentScreen } = useApp();
+  const { setCurrentScreen, setIsAdminOpen } = useApp();
   const [language, setLanguage] = useState<'FR' | 'EN'>('FR');
 
   return (
     <div className="flex-1 flex flex-col justify-between p-6 bg-gradient-to-b from-white via-indigo-50/30 to-white text-slate-900 min-h-screen">
       {/* Top Header with Language Picker */}
       <div className="flex justify-between items-center pt-2">
-        <div className="flex items-center gap-2">
+        <div 
+          onClick={() => {
+            setIsAdminOpen(true);
+            window.history.pushState({}, '', `${window.location.pathname}?admin`);
+            window.dispatchEvent(new Event('popstate'));
+          }}
+          className="flex items-center gap-2 cursor-pointer select-none active:opacity-70 transition"
+          title="Ouvrir le portail d'administration"
+        >
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white font-extrabold text-2xl shadow-lg shadow-indigo-500/20">
             S
           </div>

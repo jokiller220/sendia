@@ -20,7 +20,7 @@ import {
 import type { KycTier } from '../../types';
 
 export const SendiaAdminPortal: React.FC = () => {
-  const { exchangeRate, simulateWebhookPaymentSuccess } = useApp();
+  const { exchangeRate, simulateWebhookPaymentSuccess, setIsAdminOpen } = useApp();
   const [activeAdminTab, setActiveAdminTab] = useState<
     'overview' | 'users' | 'wallets' | 'transactions' | 'kyc' | 'geniuspay'
   >('overview');
@@ -181,7 +181,19 @@ export const SendiaAdminPortal: React.FC = () => {
   // --- UNAUTHENTICATED ADMIN LOGIN SCREEN ---
   if (!isAdminAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6 font-sans">
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans relative">
+        <button
+          onClick={() => {
+            setIsAdminOpen(false);
+            window.history.pushState({}, '', window.location.pathname);
+            window.dispatchEvent(new Event('popstate'));
+          }}
+          className="absolute top-6 left-6 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-2 border border-slate-700/60 shadow-lg cursor-pointer"
+        >
+          <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Retour à l'application</span>
+        </button>
+
         <div className="w-full max-w-md bg-slate-900 rounded-3xl p-8 border border-slate-800 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white font-extrabold text-2xl mx-auto shadow-lg shadow-indigo-600/30">
@@ -313,10 +325,22 @@ export const SendiaAdminPortal: React.FC = () => {
 
           <button
             onClick={handleAdminLogout}
-            className="py-1.5 px-3 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 text-xs font-bold transition flex items-center gap-1.5"
+            className="py-1.5 px-3 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
           >
             <Lock className="w-3.5 h-3.5" />
             <span>Déconnexion Admin</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsAdminOpen(false);
+              window.history.pushState({}, '', window.location.pathname);
+              window.dispatchEvent(new Event('popstate'));
+            }}
+            className="py-1.5 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            <span>Retour App</span>
           </button>
         </div>
       </header>
