@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ArrowUpRight, ArrowDownLeft, Eye, EyeOff, PlusCircle, X, CreditCard } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Eye, EyeOff, PlusCircle, X, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { geniusPay } from '../../lib/geniuspay';
 
 export const WalletCard: React.FC = () => {
-  const { wallet, activeCurrency, setActiveCurrency, setCurrentScreen, rechargeWallet } = useApp();
+  const { wallet, activeCurrency, setActiveCurrency, setCurrentScreen, user } = useApp();
   const [showBalance, setShowBalance] = useState(true);
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('100');
   const [isRecharging, setIsRecharging] = useState(false);
+  const [rechargeError, setRechargeError] = useState<string | null>(null);
 
   const formattedEur = wallet.balanceEUR.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const formattedXof = wallet.balanceXOF.toLocaleString('fr-FR');
@@ -18,9 +20,44 @@ export const WalletCard: React.FC = () => {
     if (amount <= 0) return;
 
     setIsRecharging(true);
-    await rechargeWallet(amount);
-    setIsRecharging(false);
-    setShowRechargeModal(false);
+    setRechargeError(null);
+
+    try {
+      const returnUrl = `${window.location.origin}${window.location.pathname}?payment_status=success&payment_type=recharge&amount=${amount}`;
+
+      const result = await geniusPay.createCheckout({
+        amount: Math.round(amount * 100), // En centimes
+        currency: 'EUR',
+        description: `Rechargement Wallet Sendia — ${amount} €`,
+        customerName: user.name,
+        customerPhone: user.phone,
+        customerEmail: user.email,
+        returnUrl,
+        metadata: {
+          sendia_user_id: user.id,
+          sendia_type: 'RECHARGE',
+          sendia_amount_eur: amount,
+        },
+      });
+
+      if (result.success && result.checkoutUrl) {
+        // Save pending recharge info before redirect
+        localStorage.setItem('sendia_pending_recharge', JSON.stringify({
+          amount,
+          paymentRef: result.reference,
+          initiatedAt: new Date().toISOString(),
+        }));
+        // Redirect to GeniusPay payment page
+        window.location.href = result.checkoutUrl;
+      } else {
+        setRechargeError(result.message || 'Impossible d\'initier le paiement GeniusPay.');
+        setIsRecharging(false);
+      }
+    } catch (err) {
+      console.error('[WalletCard] Erreur recharge:', err);
+      setRechargeError('Erreur réseau. Vérifiez votre connexion.');
+      setIsRecharging(false);
+    }
   };
 
   return (
@@ -137,6 +174,13 @@ export const WalletCard: React.FC = () => {
             </div>
 
             <form onSubmit={handleRecharge} className="mt-4 space-y-4">
+              {rechargeError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-rose-600">{rechargeError}</p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Montant à ajouter (EUR)
@@ -173,17 +217,27 @@ export const WalletCard: React.FC = () => {
                 ))}
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>Paiement sécurisé via Carte bancaire GeniusPay.</span>
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-700 flex items-start gap-2">
+                <ExternalLink className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>Vous serez redirigé vers la page de paiement sécurisée <strong>GeniusPay</strong>. Votre wallet sera crédité automatiquement après confirmation du paiement.</span>
               </div>
 
               <button
                 type="submit"
                 disabled={isRecharging}
-                className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md transition"
+                className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
               >
-                {isRecharging ? 'Rechargement...' : 'Confirmer le rechargement'}
+                {isRecharging ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Connexion à GeniusPay...</span>
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Payer {rechargeAmount} € via GeniusPay</span>
+                  </>
+                )}
               </button>
             </form>
           </div>

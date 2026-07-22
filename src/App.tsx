@@ -32,6 +32,7 @@ import { WithdrawStatusScreen } from './components/withdraw/WithdrawStatusScreen
 import { AdminDrawer } from './components/admin/AdminDrawer';
 import { SendiaAdminPortal } from './components/admin/SendiaAdminPortal';
 import { SwipeBackContainer } from './components/common/SwipeBackContainer';
+import { GeniusPayReturnHandler } from './components/common/GeniusPayReturnHandler';
 
 const MainLayout: React.FC = () => {
   const { currentScreen, activeTab, isAdminOpen } = useApp();
@@ -139,6 +140,8 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="pwa-container">
+      {/* GeniusPay return URL handler — runs once on load, processes ?payment_status=success */}
+      <GeniusPayReturnHandler />
       <SwipeBackContainer>
         {renderContent()}
       </SwipeBackContainer>

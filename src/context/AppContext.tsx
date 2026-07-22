@@ -483,17 +483,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let geniusRef = `GPAY-LIVE-${Math.floor(100000 + Math.random() * 900000)}`;
 
     if (!sendDraft.useWalletBalance) {
-      // Invoke GeniusPay API Live Encaissement if paying by Card
-      const gpayRes = await geniusPay.createPayment({
-        amount: sendDraft.amountEUR + sendDraft.feeEUR,
-        currency: 'EUR',
-        description: `Sendia Transfert vers ${sendDraft.recipientName} (${sendDraft.recipientPhone})`,
-        customerName: user.name,
-        customerPhone: user.phone,
-        customerEmail: user.email,
-        paymentMethod: sendDraft.paymentMethodTitle,
-      });
-      if (gpayRes.reference) geniusRef = gpayRes.reference;
+      // Payment was already done via GeniusPay checkout before reaching here.
+      // The reference is stored in the pending send draft from localStorage.
+      const pendingStr = localStorage.getItem('sendia_completed_ref');
+      if (pendingStr) geniusRef = pendingStr;
     } else {
       geniusRef = `SDN-WALLET-TRANSFER-${Math.floor(100000 + Math.random() * 900000)}`;
     }

@@ -31,17 +31,24 @@ const GENIUSPAY_API_KEY = import.meta.env.VITE_GENIUSPAY_API_KEY || 'pk_live_wos
 
 /**
  * GeniusPay API Service Client
+ *
+ * REAL PAYMENT FLOW:
+ * 1. createPayment() → receives { checkout_url, reference }
+ * 2. App redirects user to checkout_url (GeniusPay hosted payment page)
+ * 3. After payment, GeniusPay redirects to our return_url with ?payment_ref=xxx&status=success
+ * 4. App detects the URL parameters on load, calls verifyPayment(reference)
+ * 5. If verified → credit wallet, record transaction
  */
 export const geniusPay = {
   apiKey: GENIUSPAY_API_KEY,
   baseUrl: GENIUSPAY_API_URL,
 
   /**
-   * Initiate a payment request via GeniusPay
+   * Create a hosted checkout session on GeniusPay.
+   * Returns a checkout_url to redirect the user to.
+   * The reference is stored locally so we can verify on return.
    */
-  async createPayment(payload: GeniusPayPaymentPayload): Promise<GeniusPayResponse> {
-    const liveRef = `GPAY-LIVE-${Math.floor(10000000 + Math.random() * 90000000)}`;
-
+  async createCheckout(payload: GeniusPayPaymentPayload & { returnUrl: string }): Promise<GeniusPayResponse> {
     try {
       const response = await fetch(`${GENIUSPAY_API_URL}/payments`, {
         method: 'POST',
@@ -59,41 +66,100 @@ export const geniusPay = {
             phone: payload.customerPhone,
             email: payload.customerEmail,
           },
-          payment_method: payload.paymentMethod,
-          return_url: window.location.origin,
+          return_url: payload.returnUrl,
+          cancel_url: `${window.location.origin}?payment_status=cancelled`,
+          metadata: payload.metadata || {},
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json();
+
+      if (response.ok && (data.checkout_url || data.payment_url || data.redirect_url)) {
+        const checkoutUrl = data.checkout_url || data.payment_url || data.redirect_url;
         return {
           success: true,
-          reference: data.reference || data.id || liveRef,
-          status: 'COMPLETED',
-          message: 'Paiement GeniusPay autorisé et validé avec succès',
-          checkoutUrl: data.checkout_url,
+          reference: data.reference || data.id || data.transaction_id,
+          status: 'PENDING',
+          message: 'Session de paiement GeniusPay créée — redirection en cours',
+          checkoutUrl,
           rawResponse: data,
         };
       }
-    } catch (error) {
-      console.warn('GeniusPay API live call note:', error);
-    }
 
-    // Return live production format confirmation
-    return {
-      success: true,
-      reference: liveRef,
-      status: 'COMPLETED',
-      message: 'Encaissement GeniusPay Live validé',
-    };
+      // API responded but without a checkout URL — log the response for debugging
+      console.warn('[GeniusPay] Checkout response sans URL de paiement:', data);
+      return {
+        success: false,
+        reference: '',
+        status: 'FAILED',
+        message: data.message || data.error || 'Impossible d\'obtenir l\'URL de paiement GeniusPay',
+        rawResponse: data,
+      };
+
+    } catch (error) {
+      console.error('[GeniusPay] Erreur réseau lors de la création du checkout:', error);
+      return {
+        success: false,
+        reference: '',
+        status: 'FAILED',
+        message: 'Erreur réseau — impossible de joindre GeniusPay',
+      };
+    }
   },
 
   /**
-   * Initiate a payout (retrait) via GeniusPay
+   * Verify a payment by reference after the user returns from GeniusPay.
+   * Called when the app detects ?payment_ref=xxx&status=success in the URL.
+   */
+  async verifyPayment(reference: string): Promise<GeniusPayResponse> {
+    try {
+      const response = await fetch(`${GENIUSPAY_API_URL}/payments/${reference}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': GENIUSPAY_API_KEY,
+          'Authorization': `Bearer ${GENIUSPAY_API_KEY}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        const isSuccess = ['success', 'completed', 'paid', 'COMPLETED', 'SUCCESS', 'PAID'].includes(
+          data.status || data.payment_status || ''
+        );
+        return {
+          success: isSuccess,
+          reference: data.reference || data.id || reference,
+          status: isSuccess ? 'COMPLETED' : 'PENDING',
+          message: isSuccess ? 'Paiement GeniusPay confirmé' : `Statut: ${data.status}`,
+          rawResponse: data,
+        };
+      }
+
+      return {
+        success: false,
+        reference,
+        status: 'FAILED',
+        message: `Vérification échouée: ${data.message || data.error}`,
+        rawResponse: data,
+      };
+
+    } catch (error) {
+      console.error('[GeniusPay] Erreur vérification paiement:', error);
+      return {
+        success: false,
+        reference,
+        status: 'FAILED',
+        message: 'Erreur réseau lors de la vérification',
+      };
+    }
+  },
+
+  /**
+   * Initiate a Mobile Money payout (retrait) via GeniusPay.
    */
   async createPayout(payload: GeniusPayPayoutPayload): Promise<GeniusPayResponse> {
-    const livePayoutRef = `GPAY-WD-${Math.floor(10000000 + Math.random() * 90000000)}`;
-
     try {
       const response = await fetch(`${GENIUSPAY_API_URL}/payouts`, {
         method: 'POST',
@@ -111,25 +177,34 @@ export const geniusPay = {
         }),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        const data = await response.json();
         return {
           success: true,
-          reference: data.reference || data.id || livePayoutRef,
+          reference: data.reference || data.id,
           status: 'COMPLETED',
-          message: `Payout Mobile Money ${payload.operator} effectué`,
+          message: `Payout Mobile Money ${payload.operator} initié`,
           rawResponse: data,
         };
       }
-    } catch (error) {
-      console.warn('GeniusPay Payout API live call note:', error);
-    }
 
-    return {
-      success: true,
-      reference: livePayoutRef,
-      status: 'COMPLETED',
-      message: `Payout GeniusPay Live ${payload.operator} vers ${payload.recipientPhone} confirmé`,
-    };
+      return {
+        success: false,
+        reference: '',
+        status: 'FAILED',
+        message: data.message || data.error || 'Payout échoué',
+        rawResponse: data,
+      };
+
+    } catch (error) {
+      console.error('[GeniusPay] Erreur payout:', error);
+      return {
+        success: false,
+        reference: '',
+        status: 'FAILED',
+        message: 'Erreur réseau lors du payout',
+      };
+    }
   },
 };
