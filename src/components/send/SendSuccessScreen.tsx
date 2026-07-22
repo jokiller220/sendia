@@ -44,7 +44,7 @@ export const SendSuccessScreen: React.FC = () => {
         </h1>
 
         <p className="mt-2 text-base text-slate-600 font-semibold max-w-xs">
-          <span className="text-indigo-600 font-black">{sendDraft.amountXOF.toLocaleString('fr-FR')} XOF</span> ont été crédités sur le wallet de {sendDraft.recipientName}.
+          <span className="text-indigo-600 font-black">{sendDraft.amountXOF.toLocaleString('fr-FR')} XOF</span> ont été crédités sur le wallet de <strong className="text-slate-900 font-black">{sendDraft.recipientName || latestTx?.senderOrRecipientName || 'votre destinataire'}</strong>.
         </p>
 
         <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs w-full max-w-xs text-left space-y-2">

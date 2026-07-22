@@ -64,17 +64,19 @@ export const SendSummaryScreen: React.FC = () => {
       }
 
       // ── GeniusPay hosted checkout ───────────────────────────────────
-      const returnUrl = `${window.location.origin}${window.location.pathname}?payment_status=success&payment_type=send`;
+      const amountInXOF = Math.round((sendDraft.amountEUR + sendDraft.feeEUR) * exchangeRate);
+      const successUrl = `${window.location.origin}${window.location.pathname}?payment_status=success&payment_type=send`;
+      const errorUrl = `${window.location.origin}${window.location.pathname}?payment_status=cancelled`;
 
       const result = await geniusPay.createCheckout({
-        amount: Math.round(totalToPay * 100),
-        currency: 'EUR',
-        description: `Transfert Sendia → ${sendDraft.recipientName} (${sendDraft.recipientPhone})`,
+        amount: amountInXOF,
+        currency: 'XOF',
+        description: `Transfert Sendia -> ${sendDraft.recipientName}`,
         customerName: user.name,
         customerPhone: user.phone,
         customerEmail: user.email,
-        returnUrl,
-        cancelUrl: `${window.location.origin}${window.location.pathname}?payment_status=cancelled`,
+        returnUrl: successUrl,
+        cancelUrl: errorUrl,
         metadata: {
           sendia_user_id: user.id,
           sendia_recipient: sendDraft.recipientName,
