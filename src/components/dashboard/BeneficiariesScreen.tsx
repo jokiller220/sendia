@@ -55,15 +55,24 @@ export const BeneficiariesScreen: React.FC = () => {
       // Clean phone number variations (e.g. +228 91 61 65 31 vs +22891616531 vs 91616531)
       const cleanQ = q.replace(/\s+/g, '').replace(/\+/g, '');
       
+      // Search in 'name', 'email', 'phone' (matching the SQL schema columns)
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,phone.ilike.%${cleanQ}%`)
+        .or(`name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,phone.ilike.%${cleanQ}%`)
         .limit(10);
 
       if (error) {
         console.warn('[Beneficiaries] Search DB note:', error.message);
-        setSearchResults([]);
+        // Fallback: search by name or email or phone individually if .or query failed
+        const { data: fallbackData } = await supabase
+          .from('users')
+          .select('*')
+          .ilike('name', `%${q}%`)
+          .limit(10);
+
+        const otherUsers = (fallbackData || []).filter(u => u.id !== currentUser.id && u.email !== currentUser.email);
+        setSearchResults(otherUsers);
       } else {
         // Exclude current user from search results
         const otherUsers = (data || []).filter(u => u.id !== currentUser.id && u.email !== currentUser.email);
@@ -255,11 +264,11 @@ export const BeneficiariesScreen: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
-                      {(u.full_name || u.name || 'US').slice(0, 2).toUpperCase()}
+                      {(u.name || u.full_name || 'US').slice(0, 2).toUpperCase()}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                        <span>{u.full_name || u.name}</span>
+                        <span>{u.name || u.full_name}</span>
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                       </h4>
                       <p className="text-[11px] text-slate-500">{u.phone || u.email}</p>
