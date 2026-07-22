@@ -120,19 +120,26 @@ const DEFAULT_TRANSACTIONS: Transaction[] = [];
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentScreen, setCurrentScreenRaw] = useState<ScreenId>('dashboard');
+  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
+    const savedAuth = localStorage.getItem('sendia_auth');
+    return savedAuth !== null ? JSON.parse(savedAuth) : false;
+  });
+
+  const [currentScreen, setCurrentScreenRaw] = useState<ScreenId>(() => {
+    const savedAuth = localStorage.getItem('sendia_auth');
+    const isLoggedIn = savedAuth !== null ? JSON.parse(savedAuth) : false;
+    return isLoggedIn ? 'dashboard' : 'welcome';
+  });
+
   const [activeTab, setActiveTab] = useState<DashboardTab>('home');
   const [activeCurrency, setActiveCurrency] = useState<Currency>('EUR');
   const exchangeRate = 655; // 1 EUR = 655 XOF
 
-  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
-    const savedAuth = localStorage.getItem('sendia_auth');
-    return savedAuth !== null ? JSON.parse(savedAuth) : false; // Default to unauthenticated welcome screen
-  });
-
   const setIsAuthenticated = (auth: boolean) => {
     setIsAuthenticatedState(auth);
     localStorage.setItem('sendia_auth', JSON.stringify(auth));
+    // Redirect screen based on auth state
+    setCurrentScreenRaw(auth ? 'dashboard' : 'welcome');
   };
 
   // Auth Redirection Guard
