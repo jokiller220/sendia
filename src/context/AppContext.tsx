@@ -557,10 +557,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Credit recipient wallet in Supabase DB if recipient exists
     if (sendDraft.recipientPhone) {
       const cleanPhone = sendDraft.recipientPhone.trim().replace(/\s+/g, '');
-      const { data: recipientUsers } = await supabase.from('users').select('id, full_name').eq('phone', cleanPhone);
+      const digitsOnly = cleanPhone.replace(/\D/g, '');
+      const lastDigits = digitsOnly.substring(Math.max(0, digitsOnly.length - 8));
+
+      const { data: recipientUsers } = await supabase
+        .from('users')
+        .select('id, name, phone')
+        .ilike('phone', `%${lastDigits}%`);
       
-      if (recipientUsers && recipientUsers.length > 0) {
-        const recipient = recipientUsers[0];
+      const recipient = (recipientUsers || []).find(u => {
+        const dbPhoneClean = u.phone.replace(/\D/g, '');
+        const searchPhoneClean = digitsOnly;
+        return dbPhoneClean.endsWith(searchPhoneClean) || searchPhoneClean.endsWith(dbPhoneClean);
+      });
+      
+      if (recipient) {
         const { data: recipientWallets } = await supabase.from('wallets').select('*').eq('user_id', recipient.id);
 
         if (recipientWallets && recipientWallets.length > 0) {
