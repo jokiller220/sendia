@@ -10,6 +10,7 @@ export const WalletCard: React.FC = () => {
   const [rechargeAmount, setRechargeAmount] = useState('100');
   const [isRecharging, setIsRecharging] = useState(false);
   const [rechargeError, setRechargeError] = useState<string | null>(null);
+  const [rechargePending, setRechargePending] = useState(false);
 
   const formattedEur = wallet.balanceEUR.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const formattedXof = wallet.balanceXOF.toLocaleString('fr-FR');
@@ -41,14 +42,16 @@ export const WalletCard: React.FC = () => {
       });
 
       if (result.success && result.checkoutUrl) {
-        // Save pending recharge info before redirect
         localStorage.setItem('sendia_pending_recharge', JSON.stringify({
           amount,
           paymentRef: result.reference,
           initiatedAt: new Date().toISOString(),
         }));
-        // Redirect to GeniusPay payment page
-        window.location.href = result.checkoutUrl;
+        // Open in new tab — PWA stays open!
+        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
+        setRechargePending(true);
+        setShowRechargeModal(false);
+        setIsRecharging(false);
       } else {
         setRechargeError(result.message || 'Impossible d\'initier le paiement GeniusPay.');
         setIsRecharging(false);
@@ -62,6 +65,18 @@ export const WalletCard: React.FC = () => {
 
   return (
     <div className="p-5">
+      {/* Pending Recharge Notice */}
+      {rechargePending && (
+        <div className="mb-3 p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs font-bold text-amber-800">Paiement GeniusPay en cours</p>
+            <p className="text-[10px] text-amber-600">Finalisez le paiement dans l'onglet ouvert. Votre wallet sera crédité automatiquement.</p>
+          </div>
+          <button onClick={() => setRechargePending(false)} className="text-amber-400 text-xs">✕</button>
+        </div>
+      )}
+
       {/* Wallet Balance Card */}
       <div className="relative rounded-3xl bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 p-6 text-white shadow-2xl overflow-hidden border border-white/10">
         {/* Background Glowing Decorative Elements */}
