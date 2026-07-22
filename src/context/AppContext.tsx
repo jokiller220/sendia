@@ -275,6 +275,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ensureAdminWalletExists();
   }, []);
 
+  // Supabase Real-time Subscriptions (Wallet updates, Inbound Transactions, Notifications)
+  useEffect(() => {
+    if (!user || !user.id || user.id === 'usr_new') return;
+
+    // Listen to changes in the wallets table for the current user
+    const walletSubscription = supabase
+      .channel(`public:wallets:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          console.log('[Realtime] Wallet update:', payload.new);
+          const newWallet = payload.new;
+          const updatedWallet: Wallet = {
+            id: newWallet.id,
+            userId: newWallet.user_id,
+            balanceEUR: parseFloat(newWallet.balance_eur),
+            balanceXOF: parseInt(newWallet.balance_xof, 10),
+            updatedAt: newWallet.updated_at,
+          };
+          setWallet(updatedWallet);
+          localStorage.setItem('sendia_wallet', JSON.stringify(updatedWallet));
+        }
+      )
+      .subscribe();
+
+    // Listen to inserts in the transactions table for the current user
+    const txSubscription = supabase
+      .channel(`public:transactions:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          console.log('[Realtime] New Transaction:', payload.new);
+          const t = payload.new;
+          
+          const newTx: Transaction = {
+            id: t.id,
+            type: t.type,
+            title: t.title,
+            senderOrRecipientName: t.sender_or_recipient_name,
+            senderOrRecipientPhone: t.sender_or_recipient_phone,
+            amountEUR: parseFloat(t.amount_eur),
+            amountXOF: parseInt(t.amount_xof, 10),
+            feeEUR: parseFloat(t.fee_eur),
+            feeXOF: parseInt(t.fee_xof, 10),
+            exchangeRate: parseFloat(t.exchange_rate),
+            status: t.status,
+            geniusPayRef: t.genius_pay_ref,
+            paymentMethod: t.payment_method,
+            createdAt: t.created_at,
+            formattedDate: 'À l\'instant',
+          };
+
+          // Update transactions state
+          setTransactions(prev => {
+            if (prev.some(x => x.id === newTx.id)) return prev;
+            const updated = [newTx, ...prev];
+            localStorage.setItem('sendia_transactions', JSON.stringify(updated));
+            return updated;
+          });
+
+          // Add a dynamic notification
+          setNotifications(prev => {
+            const notifMsg = t.type === 'RECEIVE'
+              ? `Vous avez reçu ${newTx.amountXOF.toLocaleString('fr-FR')} XOF de ${newTx.senderOrRecipientName}.`
+              : `${newTx.amountXOF.toLocaleString('fr-FR')} XOF envoyés à ${newTx.senderOrRecipientName}.`;
+
+            return [
+              {
+                id: `notif-${Date.now()}`,
+                title: t.type === 'RECEIVE' ? 'Paiement reçu 📥' : 'Transfert envoyé 📤',
+                message: notifMsg,
+                date: 'À l\'instant',
+                unread: true,
+              },
+              ...prev,
+            ];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(walletSubscription);
+      supabase.removeChannel(txSubscription);
+    };
+  }, [user.id]);
+
   // Verify and sync live data from Supabase
   useEffect(() => {
     async function fetchSupabaseData() {
