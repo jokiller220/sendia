@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
+import { geniusPay } from '../../lib/geniuspay';
 import {
   LayoutDashboard,
   Users,
@@ -22,7 +23,7 @@ import type { KycTier } from '../../types';
 export const SendiaAdminPortal: React.FC = () => {
   const { exchangeRate, simulateWebhookPaymentSuccess, setIsAdminOpen } = useApp();
   const [activeAdminTab, setActiveAdminTab] = useState<
-    'overview' | 'users' | 'wallets' | 'transactions' | 'kyc' | 'geniuspay'
+    'overview' | 'users' | 'wallets' | 'transactions' | 'kyc' | 'geniuspay' | 'treasury'
   >('overview');
 
   // Admin Login Session State
@@ -43,6 +44,18 @@ export const SendiaAdminPortal: React.FC = () => {
   const [transactionsList, setTransactionsList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchFilter, setSearchFilter] = useState<string>('');
+
+  // Treasury & Commissions States
+  const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000000';
+  const [treasuryWallet, setTreasuryWallet] = useState<any | null>(null);
+  const [treasuryTransactions, setTreasuryTransactions] = useState<any[]>([]);
+
+  // Payout states
+  const [treasuryPayoutAmount, setTreasuryPayoutAmount] = useState<string>('10');
+  const [treasuryPayoutPhone, setTreasuryPayoutPhone] = useState<string>('');
+  const [treasuryPayoutOperator, setTreasuryPayoutOperator] = useState<string>('Wave');
+  const [treasuryStatusMsg, setTreasuryStatusMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isTreasurySubmitting, setIsTreasurySubmitting] = useState<boolean>(false);
 
   // Selected User Modal for Edit / Manual Balance Credit
   const [selectedUserForCredit, setSelectedUserForCredit] = useState<any | null>(null);
@@ -85,10 +98,122 @@ export const SendiaAdminPortal: React.FC = () => {
       // 3. Fetch Transactions
       const { data: txsData } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
       if (txsData) setTransactionsList(txsData);
+
+      // 4. Fetch Treasury Wallet
+      const { data: tresWalletData } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', ADMIN_USER_ID)
+        .maybeSingle();
+      if (tresWalletData) {
+        setTreasuryWallet(tresWalletData);
+      } else {
+        setTreasuryWallet({ balance_eur: '0.00', balance_xof: 0 });
+      }
+
+      // 5. Fetch Treasury Transactions
+      const { data: tresTxsData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', ADMIN_USER_ID)
+        .order('created_at', { ascending: false });
+      if (tresTxsData) {
+        setTreasuryTransactions(tresTxsData);
+      }
     } catch (err) {
       console.log('Admin load note:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleTreasuryPayout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsTreasurySubmitting(true);
+    setTreasuryStatusMsg(null);
+
+    const eurToWithdraw = parseFloat(treasuryPayoutAmount) || 0;
+    const xofToWithdraw = Math.round(eurToWithdraw * exchangeRate);
+
+    if (!treasuryWallet) {
+      setTreasuryStatusMsg({ type: 'error', text: 'Portefeuille trésorerie introuvable.' });
+      setIsTreasurySubmitting(false);
+      return;
+    }
+
+    const currentBalanceEur = parseFloat(treasuryWallet.balance_eur) || 0;
+
+    if (eurToWithdraw <= 0) {
+      setTreasuryStatusMsg({ type: 'error', text: 'Le montant doit être supérieur à 0.' });
+      setIsTreasurySubmitting(false);
+      return;
+    }
+
+    if (eurToWithdraw > currentBalanceEur) {
+      setTreasuryStatusMsg({ type: 'error', text: 'Solde de trésorerie insuffisant.' });
+      setIsTreasurySubmitting(false);
+      return;
+    }
+
+    try {
+      const gpayRes = await geniusPay.createPayout({
+        amount: xofToWithdraw,
+        currency: 'XOF',
+        recipientPhone: treasuryPayoutPhone,
+        operator: treasuryPayoutOperator,
+        description: `Commission withdrawal from Sendia Treasury`
+      });
+
+      if (gpayRes.success) {
+        const newEurBalance = Math.max(0, currentBalanceEur - eurToWithdraw);
+        const newXofBalance = Math.max(0, (parseInt(treasuryWallet.balance_xof, 10) || 0) - xofToWithdraw);
+
+        await supabase
+          .from('wallets')
+          .update({
+            balance_eur: newEurBalance,
+            balance_xof: newXofBalance,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', ADMIN_USER_ID);
+
+        // Log transaction for admin
+        await supabase.from('transactions').insert([{
+          id: `WD-${Math.floor(100000000 + Math.random() * 900000000)}`,
+          user_id: ADMIN_USER_ID,
+          type: 'WITHDRAW',
+          title: `Retrait Commission ${treasuryPayoutOperator}`,
+          sender_or_recipient_name: `Compte ${treasuryPayoutOperator}`,
+          sender_or_recipient_phone: treasuryPayoutPhone,
+          amount_eur: eurToWithdraw,
+          amount_xof: xofToWithdraw,
+          fee_eur: 0,
+          fee_xof: 0,
+          exchange_rate: exchangeRate,
+          status: 'COMPLETED',
+          genius_pay_ref: gpayRes.reference || `GPAY-WD-${Math.floor(10000 + Math.random() * 90000)}`,
+          payment_method: `${treasuryPayoutOperator} (${treasuryPayoutPhone})`,
+          formatted_date: 'À l\'instant',
+        }]);
+
+        setTreasuryStatusMsg({ 
+          type: 'success', 
+          text: `Retrait de ${eurToWithdraw.toFixed(2)} € (${xofToWithdraw.toLocaleString()} XOF) effectué avec succès !` 
+        });
+        setTreasuryPayoutAmount('10');
+        setTreasuryPayoutPhone('');
+        loadAdminData();
+      } else {
+        setTreasuryStatusMsg({ 
+          type: 'error', 
+          text: gpayRes.message || 'Erreur lors du traitement du retrait via GeniusPay.' 
+        });
+      }
+    } catch (err: any) {
+      console.error('Treasury payout exception:', err);
+      setTreasuryStatusMsg({ type: 'error', text: `Une erreur est survenue : ${err.message || err}` });
+    } finally {
+      setIsTreasurySubmitting(false);
     }
   };
 
@@ -444,6 +569,25 @@ export const SendiaAdminPortal: React.FC = () => {
             >
               <Zap className="w-4 h-4 text-amber-400" />
               <span>Passerelle GeniusPay</span>
+            </button>
+
+            <button
+              onClick={() => setActiveAdminTab('treasury')}
+              className={`w-full px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                activeAdminTab === 'treasury'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <TrendingUp className="w-4 h-4 text-indigo-400" />
+                <span>Trésorerie & Commissions</span>
+              </div>
+              {treasuryWallet && (
+                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-amber-400 font-bold">
+                  {(parseFloat(treasuryWallet.balance_eur) || 0).toFixed(2)} €
+                </span>
+              )}
             </button>
           </div>
 
@@ -872,6 +1016,169 @@ export const SendiaAdminPortal: React.FC = () => {
                     </div>
                   )}
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: TREASURY & COMMISSIONS */}
+          {activeAdminTab === 'treasury' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-white">
+                  Gestion de la Trésorerie Sendia
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Suivez les commissions accumulées (frais de transaction) et effectuez des retraits
+                </p>
+              </div>
+
+              {/* Status Notifications */}
+              {treasuryStatusMsg && (
+                <div className={`p-4 rounded-2xl text-xs font-bold border ${
+                  treasuryStatusMsg.type === 'success' 
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                    : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                }`}>
+                  {treasuryStatusMsg.text}
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-6">
+                {/* Solde Trésorerie Card */}
+                <div className="col-span-1 p-6 rounded-3xl bg-indigo-950/80 border border-indigo-500/40 text-white shadow-xl flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-extrabold text-indigo-300 uppercase tracking-wider">Solde Commissions Collectées</span>
+                    <div className="text-4xl font-black mt-2 text-indigo-100">
+                      {(parseFloat(treasuryWallet?.balance_eur) || 0.00).toFixed(2)} €
+                    </div>
+                    <div className="text-xs text-indigo-300 mt-1">
+                      (= {Math.round((parseFloat(treasuryWallet?.balance_eur) || 0.00) * exchangeRate).toLocaleString('fr-FR')} XOF)
+                    </div>
+                  </div>
+
+                  <div className="mt-8 p-3 rounded-2xl bg-indigo-900/50 border border-indigo-800 text-[11px] text-indigo-200">
+                    ℹ️ Chaque transfert d'argent charge <strong>1,00 €</strong> de frais fixes, immédiatement transférés sur ce portefeuille de trésorerie.
+                  </div>
+                </div>
+
+                {/* Retrait de Trésorerie Form */}
+                <div className="col-span-2 p-6 rounded-3xl bg-slate-800/80 border border-slate-700/60 shadow-lg">
+                  <h3 className="text-sm font-bold text-white mb-4">Effectuer un Retrait de Commissions</h3>
+
+                  <form onSubmit={handleTreasuryPayout} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">
+                          Moyen de retrait
+                        </label>
+                        <select
+                          value={treasuryPayoutOperator}
+                          onChange={e => setTreasuryPayoutOperator(e.target.value)}
+                          className="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none"
+                        >
+                          <option value="Wave">Wave (Sénégal / Côte d'Ivoire)</option>
+                          <option value="Orange Money">Orange Money</option>
+                          <option value="MTN MoMo">MTN MoMo</option>
+                          <option value="Flooz">Flooz (Moov)</option>
+                          <option value="T-Money">T-Money</option>
+                          <option value="Bank">Virement Bancaire (IBAN)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">
+                          Montant à retirer (EUR)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            value={treasuryPayoutAmount}
+                            onChange={e => setTreasuryPayoutAmount(e.target.value)}
+                            className="w-full pl-3 pr-12 py-3 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none"
+                            placeholder="50"
+                          />
+                          <span className="absolute right-3 top-3 text-[10px] font-bold text-slate-500">EUR (€)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">
+                        {treasuryPayoutOperator === 'Bank' ? 'IBAN du Compte Bénéficiaire' : 'Numéro de Téléphone Mobile Money'}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={treasuryPayoutPhone}
+                        onChange={e => setTreasuryPayoutPhone(e.target.value)}
+                        placeholder={treasuryPayoutOperator === 'Bank' ? 'FR76 3000 6000 0123 4567 8901 234' : '+228 90 12 34 56'}
+                        className="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold text-white focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-900 text-[11px] text-slate-400 flex justify-between items-center">
+                      <span>Équivalent retiré (XOF) :</span>
+                      <strong className="text-amber-400 text-xs">
+                        {Math.round((parseFloat(treasuryPayoutAmount) || 0) * exchangeRate).toLocaleString()} XOF
+                      </strong>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isTreasurySubmitting}
+                      className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isTreasurySubmitting ? (
+                        <span>Traitement du Payout...</span>
+                      ) : (
+                        <span>Initier le retrait de Commissions</span>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Historique des transactions de trésorerie */}
+              <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+                <h3 className="text-base font-bold text-white mb-4">Historique des Flux de Trésorerie</h3>
+                <div className="space-y-2">
+                  {treasuryTransactions.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500">
+                      Aucun mouvement de trésorerie enregistré pour le moment.
+                    </div>
+                  ) : (
+                    treasuryTransactions.map(tx => (
+                      <div key={tx.id} className="p-3.5 rounded-xl bg-slate-900 border border-slate-850 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-xs ${
+                            tx.type === 'RECEIVE' 
+                              ? 'bg-emerald-500/20 text-emerald-400' 
+                              : 'bg-rose-500/20 text-rose-400'
+                          }`}>
+                            {tx.type === 'RECEIVE' ? 'FEE' : 'OUT'}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-white">{tx.title}</h4>
+                            <span className="text-[10px] text-slate-500">{tx.payment_method} • {tx.formatted_date}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className={`text-sm font-bold block ${
+                            tx.type === 'RECEIVE' ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {tx.type === 'RECEIVE' ? '+' : '-'}{tx.amount_eur} €
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {tx.type === 'RECEIVE' ? '+' : '-'}{tx.amount_xof.toLocaleString()} XOF
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}

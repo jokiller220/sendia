@@ -238,6 +238,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     phoneOrIban: '',
   });
 
+  // Auto-initialize the Admin Treasury Wallet on load
+  useEffect(() => {
+    async function ensureAdminWalletExists() {
+      const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000000';
+      try {
+        const { data: adminUser } = await supabase.from('users').select('id').eq('id', ADMIN_USER_ID).maybeSingle();
+        if (!adminUser) {
+          // Create admin treasury user
+          await supabase.from('users').insert([{
+            id: ADMIN_USER_ID,
+            name: 'Trésorerie Sendia',
+            phone: '+33000000000',
+            email: 'admin@sendia.app',
+            country: 'France',
+            country_code: 'FR',
+            flag: '🇫🇷',
+            kyc_status: 'VERIFIED',
+            kyc_tier: 'TIER_2'
+          }]);
+
+          // Create admin treasury wallet
+          await supabase.from('wallets').insert([{
+            id: '00000000-0000-0000-0000-000000000001',
+            user_id: ADMIN_USER_ID,
+            balance_eur: 0.00,
+            balance_xof: 0,
+            updated_at: new Date().toISOString()
+          }]);
+          console.log('[Treasury] Initialized admin treasury user and wallet.');
+        }
+      } catch (err) {
+        console.warn('[Treasury] Initialisation warning:', err);
+      }
+    }
+    ensureAdminWalletExists();
+  }, []);
+
   // Verify and sync live data from Supabase
   useEffect(() => {
     async function fetchSupabaseData() {
@@ -553,6 +590,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }]).then(({ error }) => {
       if (error) console.log('Supabase tx sync info:', error.message);
     });
+
+    // Credit transaction fee to Admin Wallet in Supabase
+    if (sendDraft.feeEUR > 0) {
+      try {
+        const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000000';
+        const { data: adminWallet } = await supabase
+          .from('wallets')
+          .select('*')
+          .eq('user_id', ADMIN_USER_ID)
+          .maybeSingle();
+
+        if (adminWallet) {
+          const updatedEur = parseFloat(adminWallet.balance_eur) + sendDraft.feeEUR;
+          const updatedXof = parseInt(adminWallet.balance_xof, 10) + Math.round(sendDraft.feeEUR * exchangeRate);
+
+          await supabase
+            .from('wallets')
+            .update({
+              balance_eur: updatedEur,
+              balance_xof: updatedXof,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', adminWallet.id);
+            
+          // Add earning transaction for admin treasury
+          await supabase.from('transactions').insert([{
+            id: `FEE-${Math.floor(100000000 + Math.random() * 900000000)}`,
+            user_id: ADMIN_USER_ID,
+            type: 'RECEIVE',
+            title: `Commission - Transfert de ${user.name}`,
+            sender_or_recipient_name: user.name,
+            sender_or_recipient_phone: user.phone,
+            amount_eur: sendDraft.feeEUR,
+            amount_xof: Math.round(sendDraft.feeEUR * exchangeRate),
+            fee_eur: 0,
+            fee_xof: 0,
+            exchange_rate: exchangeRate,
+            status: 'COMPLETED',
+            genius_pay_ref: geniusRef,
+            payment_method: 'Commission Sendia',
+            formatted_date: 'À l\'instant',
+          }]);
+        }
+      } catch (err) {
+        console.error('Error crediting fee to admin wallet:', err);
+      }
+    }
 
     // Credit recipient wallet in Supabase DB if recipient exists
     if (sendDraft.recipientPhone) {
