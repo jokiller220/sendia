@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { WelcomeScreen } from './components/auth/WelcomeScreen';
+import { LoginScreen } from './components/auth/LoginScreen';
 import { RegisterScreen } from './components/auth/RegisterScreen';
 import { OtpScreen } from './components/auth/OtpScreen';
 import { CreatePasswordScreen } from './components/auth/CreatePasswordScreen';
@@ -94,6 +95,8 @@ const MainLayout: React.FC = () => {
       // Auth Flow
       case 'welcome':
         return <WelcomeScreen />;
+      case 'login':
+        return <LoginScreen />;
       case 'register':
         return <RegisterScreen />;
       case 'otp':

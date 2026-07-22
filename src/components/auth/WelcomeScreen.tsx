@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Globe, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 
 export const WelcomeScreen: React.FC = () => {
-  const { setCurrentScreen, setIsAuthenticated } = useApp();
+  const { setCurrentScreen } = useApp();
   const [language, setLanguage] = useState<'FR' | 'EN'>('FR');
 
   return (
@@ -93,8 +93,7 @@ export const WelcomeScreen: React.FC = () => {
 
         <button
           onClick={() => {
-            setIsAuthenticated(true);
-            setCurrentScreen('dashboard');
+            setCurrentScreen('login');
           }}
           className="w-full py-3.5 px-6 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-sm transition"
         >

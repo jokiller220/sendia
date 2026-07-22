@@ -5,6 +5,7 @@ import { geniusPay } from '../lib/geniuspay';
 
 export type ScreenId =
   | 'welcome'
+  | 'login'
   | 'register'
   | 'otp'
   | 'password'
@@ -48,8 +49,11 @@ interface AppContextType {
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
   wallet: Wallet;
+  setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
   transactions: Transaction[];
+  setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
   beneficiaries: Beneficiary[];
+  setBeneficiaries: React.Dispatch<React.SetStateAction<Beneficiary[]>>;
   selectedTransaction: Transaction | null;
   setSelectedTransaction: (tx: Transaction | null) => void;
   
@@ -144,7 +148,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auth Redirection Guard
   const setCurrentScreen = (screen: ScreenId) => {
-    const authScreens: ScreenId[] = ['welcome', 'register', 'otp', 'password'];
+    const authScreens: ScreenId[] = ['welcome', 'login', 'register', 'otp', 'password'];
     
     // If logged in and trying to go to auth screens, force dashboard
     if (isAuthenticated && authScreens.includes(screen)) {
@@ -166,7 +170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'send_amount', 'send_payment_method', 'send_summary', 'send_success',
       'withdraw_amount', 'withdraw_status',
       'kyc_overview', 'kyc_doc_select', 'kyc_doc_capture', 'kyc_selfie_capture', 'kyc_processing',
-      'otp', 'password', 'register'
+      'otp', 'password', 'register', 'login'
     ];
 
     if (subScreens.includes(currentScreen)) {
@@ -179,6 +183,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       else if (currentScreen === 'kyc_selfie_capture') setCurrentScreen('kyc_doc_capture');
       else if (currentScreen === 'otp') setCurrentScreen('register');
       else if (currentScreen === 'password') setCurrentScreen('otp');
+      else if (currentScreen === 'login') setCurrentScreen('welcome');
       else setCurrentScreen('dashboard');
     }
   };
@@ -405,7 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const registerNewAccount = async (name: string, phone: string, email: string) => {
     const newUser: UserProfile = {
-      id: `usr_${Date.now()}`,
+      id: crypto.randomUUID(),
       name: name || 'Membre Sendia',
       phone,
       email: email || `${phone.replace(/\s+/g, '')}@sendia.app`,
@@ -417,7 +422,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const newWallet: Wallet = {
-      id: `wal_${Date.now()}`,
+      id: crypto.randomUUID(),
       userId: newUser.id,
       balanceEUR: 0.00, // 0.00 € initial balance (No fake gifts or hardcoded bonuses)
       balanceXOF: 0,
@@ -458,7 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addBeneficiary = (b: Omit<Beneficiary, 'id'>) => {
     const newBen: Beneficiary = {
       ...b,
-      id: `ben_${Date.now()}`,
+      id: crypto.randomUUID(),
       avatarBg: 'bg-indigo-500',
     };
     setBeneficiaries(prev => [newBen, ...prev]);
@@ -744,8 +749,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         user,
         setUser,
         wallet,
+        setWallet,
         transactions,
+        setTransactions,
         beneficiaries,
+        setBeneficiaries,
         selectedTransaction,
         setSelectedTransaction,
         sendDraft,
