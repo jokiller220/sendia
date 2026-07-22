@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Sliders, Zap, ShieldAlert, RefreshCw, CheckCircle2, Database, KeyRound } from 'lucide-react';
-import { geniusPay } from '../../lib/geniuspay';
 
 export const AdminDrawer: React.FC = () => {
   const { isAdminOpen, setIsAdminOpen, simulateWebhookPaymentSuccess, resetAppState, user, setUser, supabaseUrl } = useApp();
@@ -57,10 +56,10 @@ export const AdminDrawer: React.FC = () => {
               </span>
             </div>
             <p className="mt-2 font-mono text-[10px] text-slate-300 truncate">
-              Public Key: {geniusPay.apiKey}
+              Public Key: pk_live_wosUxndi...
             </p>
             <p className="font-mono text-[10px] text-slate-400 truncate">
-              Endpoint: {geniusPay.baseUrl}
+              Proxy: /functions/v1/geniuspay-proxy
             </p>
           </div>
 

@@ -1,11 +1,33 @@
-export interface GeniusPayPaymentPayload {
-  amount: number;
-  currency: string;
+/**
+ * GeniusPay Secure Client
+ *
+ * All calls are routed through a Supabase Edge Function (geniuspay-proxy)
+ * which acts as a secure backend proxy. This avoids:
+ * - CORS errors (browser blocks direct calls to geniuspay.ci)
+ * - Secret key exposure in frontend bundle
+ *
+ * REAL PAYMENT FLOW:
+ * 1. createCheckout() → Edge Function → GeniusPay → returns { checkoutUrl, reference }
+ * 2. App redirects user to checkoutUrl (GeniusPay hosted payment page)
+ * 3. User pays on GeniusPay (card details entered there)
+ * 4. GeniusPay redirects back to app with ?payment_status=success&reference=xxx
+ * 5. GeniusPayReturnHandler calls verifyPayment(reference) via Edge Function
+ * 6. If confirmed → wallet credited in Supabase, transaction recorded
+ */
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://jkfruplfaxdiufrqzeew.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_2mnbMuxBoH9kugDa86HGTg_ghuk0ycN';
+const PROXY_URL = `${SUPABASE_URL}/functions/v1/geniuspay-proxy`;
+
+export interface GeniusPayCheckoutPayload {
+  amount: number;       // in centimes (e.g. 5000 = 50.00 €)
+  currency: string;     // 'EUR'
   description: string;
   customerName: string;
   customerPhone: string;
   customerEmail: string;
-  paymentMethod?: string;
+  returnUrl: string;
+  cancelUrl?: string;
   metadata?: Record<string, any>;
 }
 
@@ -26,185 +48,86 @@ export interface GeniusPayResponse {
   rawResponse?: any;
 }
 
-const GENIUSPAY_API_URL = import.meta.env.VITE_GENIUSPAY_API_URL || 'https://geniuspay.ci/api/v1/merchant';
-const GENIUSPAY_API_KEY = import.meta.env.VITE_GENIUSPAY_API_KEY || 'pk_live_wosUxndiXmm19VlRcjLiVfCa1h24fhbM';
+const callProxy = async (action: string, payload: Record<string, any>): Promise<GeniusPayResponse> => {
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action, payload }),
+    });
 
-/**
- * GeniusPay API Service Client
- *
- * REAL PAYMENT FLOW:
- * 1. createPayment() → receives { checkout_url, reference }
- * 2. App redirects user to checkout_url (GeniusPay hosted payment page)
- * 3. After payment, GeniusPay redirects to our return_url with ?payment_ref=xxx&status=success
- * 4. App detects the URL parameters on load, calls verifyPayment(reference)
- * 5. If verified → credit wallet, record transaction
- */
-export const geniusPay = {
-  apiKey: GENIUSPAY_API_KEY,
-  baseUrl: GENIUSPAY_API_URL,
+    const data = await response.json();
 
-  /**
-   * Create a hosted checkout session on GeniusPay.
-   * Returns a checkout_url to redirect the user to.
-   * The reference is stored locally so we can verify on return.
-   */
-  async createCheckout(payload: GeniusPayPaymentPayload & { returnUrl: string }): Promise<GeniusPayResponse> {
-    try {
-      const response = await fetch(`${GENIUSPAY_API_URL}/payments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': GENIUSPAY_API_KEY,
-          'Authorization': `Bearer ${GENIUSPAY_API_KEY}`,
-        },
-        body: JSON.stringify({
-          amount: payload.amount,
-          currency: payload.currency,
-          description: payload.description,
-          customer: {
-            name: payload.customerName,
-            phone: payload.customerPhone,
-            email: payload.customerEmail,
-          },
-          return_url: payload.returnUrl,
-          cancel_url: `${window.location.origin}?payment_status=cancelled`,
-          metadata: payload.metadata || {},
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && (data.checkout_url || data.payment_url || data.redirect_url)) {
-        const checkoutUrl = data.checkout_url || data.payment_url || data.redirect_url;
-        return {
-          success: true,
-          reference: data.reference || data.id || data.transaction_id,
-          status: 'PENDING',
-          message: 'Session de paiement GeniusPay créée — redirection en cours',
-          checkoutUrl,
-          rawResponse: data,
-        };
-      }
-
-      // API responded but without a checkout URL — log the response for debugging
-      console.warn('[GeniusPay] Checkout response sans URL de paiement:', data);
+    if (!response.ok) {
       return {
         success: false,
         reference: '',
         status: 'FAILED',
-        message: data.message || data.error || 'Impossible d\'obtenir l\'URL de paiement GeniusPay',
+        message: data.message || `Erreur proxy (${response.status})`,
         rawResponse: data,
       };
-
-    } catch (error) {
-      console.error('[GeniusPay] Erreur réseau lors de la création du checkout:', error);
-      return {
-        success: false,
-        reference: '',
-        status: 'FAILED',
-        message: 'Erreur réseau — impossible de joindre GeniusPay',
-      };
     }
+
+    return {
+      success: data.success ?? false,
+      reference: data.reference || '',
+      status: data.status || 'PENDING',
+      message: data.message || '',
+      checkoutUrl: data.checkoutUrl,
+      rawResponse: data.raw,
+    };
+
+  } catch (error) {
+    console.error(`[GeniusPay Proxy] Erreur réseau action "${action}":`, error);
+    return {
+      success: false,
+      reference: '',
+      status: 'FAILED',
+      message: `Erreur réseau — impossible de joindre le proxy GeniusPay`,
+    };
+  }
+};
+
+export const geniusPay = {
+  /**
+   * Create a hosted GeniusPay checkout session.
+   * Returns a checkoutUrl to redirect the user to.
+   */
+  async createCheckout(payload: GeniusPayCheckoutPayload): Promise<GeniusPayResponse> {
+    return callProxy('create_checkout', {
+      amount: payload.amount,
+      currency: payload.currency,
+      description: payload.description,
+      customerName: payload.customerName,
+      customerPhone: payload.customerPhone,
+      customerEmail: payload.customerEmail,
+      returnUrl: payload.returnUrl,
+      cancelUrl: payload.cancelUrl || `${window.location.origin}?payment_status=cancelled`,
+      metadata: payload.metadata || {},
+    });
   },
 
   /**
-   * Verify a payment by reference after the user returns from GeniusPay.
-   * Called when the app detects ?payment_ref=xxx&status=success in the URL.
+   * Verify a payment by reference after user returns from GeniusPay.
    */
   async verifyPayment(reference: string): Promise<GeniusPayResponse> {
-    try {
-      const response = await fetch(`${GENIUSPAY_API_URL}/payments/${reference}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': GENIUSPAY_API_KEY,
-          'Authorization': `Bearer ${GENIUSPAY_API_KEY}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        const isSuccess = ['success', 'completed', 'paid', 'COMPLETED', 'SUCCESS', 'PAID'].includes(
-          data.status || data.payment_status || ''
-        );
-        return {
-          success: isSuccess,
-          reference: data.reference || data.id || reference,
-          status: isSuccess ? 'COMPLETED' : 'PENDING',
-          message: isSuccess ? 'Paiement GeniusPay confirmé' : `Statut: ${data.status}`,
-          rawResponse: data,
-        };
-      }
-
-      return {
-        success: false,
-        reference,
-        status: 'FAILED',
-        message: `Vérification échouée: ${data.message || data.error}`,
-        rawResponse: data,
-      };
-
-    } catch (error) {
-      console.error('[GeniusPay] Erreur vérification paiement:', error);
-      return {
-        success: false,
-        reference,
-        status: 'FAILED',
-        message: 'Erreur réseau lors de la vérification',
-      };
-    }
+    return callProxy('verify_payment', { reference });
   },
 
   /**
-   * Initiate a Mobile Money payout (retrait) via GeniusPay.
+   * Initiate a Mobile Money payout via GeniusPay.
    */
   async createPayout(payload: GeniusPayPayoutPayload): Promise<GeniusPayResponse> {
-    try {
-      const response = await fetch(`${GENIUSPAY_API_URL}/payouts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': GENIUSPAY_API_KEY,
-          'Authorization': `Bearer ${GENIUSPAY_API_KEY}`,
-        },
-        body: JSON.stringify({
-          amount: payload.amount,
-          currency: payload.currency,
-          recipient_phone: payload.recipientPhone,
-          operator: payload.operator.toLowerCase(),
-          description: payload.description,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return {
-          success: true,
-          reference: data.reference || data.id,
-          status: 'COMPLETED',
-          message: `Payout Mobile Money ${payload.operator} initié`,
-          rawResponse: data,
-        };
-      }
-
-      return {
-        success: false,
-        reference: '',
-        status: 'FAILED',
-        message: data.message || data.error || 'Payout échoué',
-        rawResponse: data,
-      };
-
-    } catch (error) {
-      console.error('[GeniusPay] Erreur payout:', error);
-      return {
-        success: false,
-        reference: '',
-        status: 'FAILED',
-        message: 'Erreur réseau lors du payout',
-      };
-    }
+    return callProxy('create_payout', {
+      amount: payload.amount,
+      currency: payload.currency,
+      recipientPhone: payload.recipientPhone,
+      operator: payload.operator,
+      description: payload.description,
+    });
   },
 };
