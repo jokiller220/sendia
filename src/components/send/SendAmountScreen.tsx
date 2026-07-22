@@ -63,6 +63,31 @@ export const SendAmountScreen: React.FC = () => {
           </div>
         </div>
 
+        {/* Quick select buttons */}
+        <div className="flex gap-2 mt-2">
+          {[20, 50, 100, 200].map(amt => (
+            <button
+              key={amt}
+              type="button"
+              onClick={() => handleAmountChange(amt.toString())}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border transition cursor-pointer ${
+                sendDraft.amountEUR === amt
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {amt} €
+            </button>
+          ))}
+        </div>
+
+        {/* Minimum limit warning */}
+        {sendDraft.amountEUR > 0 && sendDraft.amountEUR < 10 && (
+          <div className="mt-2 text-xs font-bold text-rose-500 bg-rose-50 border border-rose-100 p-2.5 rounded-xl flex items-center gap-1.5">
+            ⚠️ Le montant d'envoi minimum est de 10,00 €.
+          </div>
+        )}
+
         {/* Recipient Selection Card */}
         <div className="mt-4">
           <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
@@ -134,8 +159,8 @@ export const SendAmountScreen: React.FC = () => {
       <div className="pb-4">
         <button
           onClick={() => setCurrentScreen('send_payment_method')}
-          disabled={sendDraft.amountEUR <= 0}
-          className="w-full py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 active:scale-[0.99] text-white font-bold text-base shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2"
+          disabled={sendDraft.amountEUR < 10}
+          className="w-full py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 active:scale-[0.99] text-white font-bold text-base shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer"
         >
           <span>Continuer</span>
           <ArrowRight className="w-5 h-5" />
