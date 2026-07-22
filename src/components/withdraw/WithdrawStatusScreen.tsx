@@ -55,7 +55,12 @@ export const WithdrawStatusScreen: React.FC = () => {
             {withdrawDraft.amountXOF.toLocaleString('fr-FR')} XOF
           </span>{' '}
           vers <strong className="text-slate-900">{withdrawDraft.operator}</strong>{' '}
-          {isProcessing ? 'est en cours de traitement via GeniusPay Payout.' : 'a été crédité sur votre compte Mobile Money.'}
+          {isProcessing 
+            ? 'est en cours de traitement via GeniusPay Payout.' 
+            : withdrawDraft.operator === 'Bank'
+              ? 'a été envoyé vers votre compte bancaire.'
+              : 'a été crédité sur votre compte Mobile Money.'
+          }
         </p>
 
         <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs w-full max-w-xs text-left space-y-2">

@@ -115,7 +115,7 @@ export const WithdrawAmountScreen: React.FC = () => {
         {/* Fees Breakdown Box */}
         <div className="mt-6 p-4 rounded-2xl border border-slate-200 bg-white space-y-2.5 text-xs">
           <div className="flex justify-between items-center text-slate-600">
-            <span>Frais de retrait Mobile Money</span>
+            <span>{withdrawDraft.operator === 'Bank' ? 'Frais de virement bancaire' : 'Frais de retrait Mobile Money'}</span>
             <span className="font-semibold text-slate-900">{withdrawDraft.feeXOF.toLocaleString('fr-FR')} XOF</span>
           </div>
 
