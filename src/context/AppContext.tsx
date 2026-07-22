@@ -528,7 +528,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
     ]);
 
-    // Supabase sync
+    // Supabase sync & Wallet-to-Wallet credit in DB
     supabase.from('transactions').insert([{
       id: newTx.id,
       user_id: user.id,
@@ -548,6 +548,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }]).then(({ error }) => {
       if (error) console.log('Supabase tx sync info:', error.message);
     });
+
+    // Credit recipient wallet in Supabase DB if recipient exists
+    if (sendDraft.recipientPhone) {
+      const cleanPhone = sendDraft.recipientPhone.trim().replace(/\s+/g, '');
+      const { data: recipientUsers } = await supabase.from('users').select('id, full_name').eq('phone', cleanPhone);
+      
+      if (recipientUsers && recipientUsers.length > 0) {
+        const recipient = recipientUsers[0];
+        const { data: recipientWallets } = await supabase.from('wallets').select('*').eq('user_id', recipient.id);
+
+        if (recipientWallets && recipientWallets.length > 0) {
+          const recWallet = recipientWallets[0];
+          const updatedXof = (recWallet.balance_xof || 0) + sendDraft.amountXOF;
+          const updatedEur = (recWallet.balance_eur || 0) + sendDraft.amountEUR;
+
+          await supabase.from('wallets').update({
+            balance_xof: updatedXof,
+            balance_eur: updatedEur,
+            updated_at: new Date().toISOString()
+          }).eq('id', recWallet.id);
+
+          // Add transaction record for recipient
+          await supabase.from('transactions').insert([{
+            id: `SDN-REC-${Math.floor(100000000 + Math.random() * 900000000)}`,
+            user_id: recipient.id,
+            type: 'RECEIVE',
+            title: `Reçu de ${user.name}`,
+            sender_or_recipient_name: user.name,
+            sender_or_recipient_phone: user.phone,
+            amount_eur: sendDraft.amountEUR,
+            amount_xof: sendDraft.amountXOF,
+            fee_eur: 0,
+            fee_xof: 0,
+            exchange_rate: exchangeRate,
+            status: 'COMPLETED',
+            genius_pay_ref: geniusRef,
+            payment_method: 'Transfert Wallet Sendia',
+            formatted_date: 'À l\'instant',
+          }]);
+        }
+      }
+    }
   };
 
   const executeWithdrawal = async () => {
