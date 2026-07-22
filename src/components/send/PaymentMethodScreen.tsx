@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ChevronLeft, CreditCard, Building2, Smartphone, ShieldCheck, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronLeft, CreditCard, ShieldCheck, Wallet as WalletIcon } from 'lucide-react';
 
 export const PaymentMethodScreen: React.FC = () => {
   const { sendDraft, setSendDraft, setCurrentScreen, wallet } = useApp();
@@ -17,30 +17,9 @@ export const PaymentMethodScreen: React.FC = () => {
     },
     {
       id: 'card',
-      title: 'Carte bancaire',
-      subtitle: 'Visa, Mastercard (Paiement instantané via GeniusPay)',
+      title: 'GeniusPay (Carte Bancaire & Mobile Money)',
+      subtitle: 'Paiement direct sécurisé via la passerelle GeniusPay',
       icon: <CreditCard className="w-5 h-5 text-indigo-600" />,
-      isWallet: false,
-    },
-    {
-      id: 'sepa',
-      title: 'Virement bancaire',
-      subtitle: 'Virement SEPA européen (1-2 jours ouvrés)',
-      icon: <Building2 className="w-5 h-5 text-indigo-600" />,
-      isWallet: false,
-    },
-    {
-      id: 'apple',
-      title: 'Apple Pay',
-      subtitle: 'Validation biométrique rapide',
-      icon: <Smartphone className="w-5 h-5 text-indigo-600" />,
-      isWallet: false,
-    },
-    {
-      id: 'google',
-      title: 'Google Pay',
-      subtitle: 'Paiement sécurisé en un clic',
-      icon: <Smartphone className="w-5 h-5 text-indigo-600" />,
       isWallet: false,
     },
   ];
@@ -52,7 +31,6 @@ export const PaymentMethodScreen: React.FC = () => {
         ...prev,
         paymentMethodTitle: methodObj.title,
         useWalletBalance: methodObj.id === 'wallet',
-        // 0€ fee when paying with internal wallet balance!
         feeEUR: methodObj.id === 'wallet' ? 0.00 : prev.feeEUR,
       }));
     }
@@ -79,7 +57,7 @@ export const PaymentMethodScreen: React.FC = () => {
           <strong className="text-slate-900 font-bold">{(sendDraft.amountEUR + sendDraft.feeEUR).toFixed(2)} €</strong>.
         </p>
 
-        {/* Radio Methods List */}
+        {/* Radio Methods List (Wallet & GeniusPay ONLY) */}
         <div className="space-y-3">
           {methods.map(m => {
             const isSelected = selectedMethod === m.id;
@@ -102,16 +80,14 @@ export const PaymentMethodScreen: React.FC = () => {
                     {m.icon}
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">{m.title}</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">{m.subtitle}</p>
+                    <h3 className="text-sm font-bold text-slate-900">{m.title}</h3>
+                    <p className="text-xs text-slate-500">{m.subtitle}</p>
                   </div>
                 </div>
 
-                <div
-                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition ${
-                    isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'
-                  }`}
-                >
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition ${
+                  isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300'
+                }`}>
                   {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
               </div>
@@ -119,9 +95,9 @@ export const PaymentMethodScreen: React.FC = () => {
           })}
         </div>
 
-        {/* GeniusPay Security Badge */}
-        <div className="mt-8 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3 text-xs text-slate-600">
-          <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+        {/* Security badge */}
+        <div className="mt-6 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-2.5 text-xs text-slate-600">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>Payez directement depuis votre solde Wallet ou via GeniusPay API.</span>
         </div>
       </div>
