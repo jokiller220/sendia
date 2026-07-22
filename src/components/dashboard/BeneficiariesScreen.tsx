@@ -42,7 +42,7 @@ export const BeneficiariesScreen: React.FC = () => {
     setSelectedDbUser(null);
     const q = queryVal.trim();
 
-    if (q.length < 2) {
+    if (q.length < 1) {
       setSearchResults([]);
       setHasSearched(false);
       return;
