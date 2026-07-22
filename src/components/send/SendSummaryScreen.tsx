@@ -98,8 +98,8 @@ export const SendSummaryScreen: React.FC = () => {
           initiatedAt: new Date().toISOString(),
         }));
 
-        // ✅ Open GeniusPay in a NEW TAB — PWA stays open!
-        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
+        // ✅ Redirect current page directly to GeniusPay (avoids popup blockers)
+        window.location.href = result.checkoutUrl;
 
         setStep('waiting');
         setIsProcessing(false);

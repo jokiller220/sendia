@@ -47,8 +47,8 @@ export const WalletCard: React.FC = () => {
           paymentRef: result.reference,
           initiatedAt: new Date().toISOString(),
         }));
-        // Open in new tab — PWA stays open!
-        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
+        // Redirect current page directly to GeniusPay (avoids popup blockers)
+        window.location.href = result.checkoutUrl;
         setRechargePending(true);
         setShowRechargeModal(false);
         setIsRecharging(false);

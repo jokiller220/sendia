@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 
-const GENIUSPAY_API_URL = Deno.env.get('VITE_GENIUSPAY_API_URL') ?? 'https://geniuspay.ci/api/v1/merchant'
+const GENIUSPAY_API_URL = Deno.env.get('VITE_GENIUSPAY_API_URL') ?? 'https://pay.genius.ci/api/v1/merchant'
 const GENIUSPAY_API_KEY = Deno.env.get('VITE_GENIUSPAY_API_KEY') ?? ''
 const GENIUSPAY_API_SECRET = Deno.env.get('VITE_GENIUSPAY_API_SECRET') ?? ''
 
@@ -65,10 +65,27 @@ serve(async (req) => {
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
+          } else {
+            const errMsg = data.error?.message || data.message || 'Erreur lors de la création de la session de paiement GeniusPay.'
+            return new Response(
+              JSON.stringify({
+                success: false,
+                message: `Erreur GeniusPay (${gpResponse.status}) : ${errMsg}`,
+                raw: data,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
           }
         }
       } catch (err) {
         console.warn('[GeniusPay Proxy] API call note:', err)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: `Erreur de connexion à l'API GeniusPay : ${err.message || err}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
 
       // Merchant Fallback redirect URL per GeniusPay specs
@@ -119,10 +136,27 @@ serve(async (req) => {
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
+          } else {
+            const errMsg = data.error?.message || data.message || `Statut de paiement : ${resData.status || 'Inconnu'}`
+            return new Response(
+              JSON.stringify({
+                success: false,
+                message: `Paiement non validé : ${errMsg}`,
+                raw: data,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
           }
         }
       } catch (err) {
         console.warn('[GeniusPay Proxy] Verify note:', err)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: `Erreur lors de la vérification du paiement : ${err.message || err}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
 
       return new Response(
